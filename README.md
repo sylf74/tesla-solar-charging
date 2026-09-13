@@ -68,6 +68,27 @@ fixed amperage. A meter outage in January must not stop you charging. It also
 resets the car to full amperage on start, since the solar controller has very
 likely left it at 6 A at the end of the day.
 
+## Dashboard
+
+The card in `dashboard/tesla_solar_card.yaml` is organised around the three
+gaps that matter, in reading order: what the controller sees, what it commands,
+and what the car actually does.
+
+![Control card](docs/img/dashboard-control.png)
+
+`Smoothed surplus` negative means the house is importing — target amps
+correctly falls to zero. `Clear sky index` around 0.43 indicates hazy
+conditions, and `Sky volatility` at 0.06 is just above the first threshold, so
+a 250 W margin is applied on top of the base margin.
+
+`Min interval between commands` is derived, not configured: the remaining API
+budget spread over the remaining daylight.
+
+![Settings card](docs/img/dashboard-settings.png)
+
+The history graph is the real tuning instrument. If the wallbox trace follows
+the surplus with acceptable lag and no sawtooth, the controller is well tuned.
+
 ## Requirements
 
 - Home Assistant with YAML packages enabled
