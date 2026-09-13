@@ -91,13 +91,32 @@ the surplus with acceptable lag and no sawtooth, the controller is well tuned.
 
 ## Requirements
 
+**Required**
+
 - Home Assistant with YAML packages enabled
 - Official **Tesla Fleet** integration, including virtual key pairing
   (without it, sensors work but commands do not)
-- A power meter for net grid flow and for the wallbox circuit
-- Per-string PV metering (optional — only the string imbalance sensor needs it)
-- Solcast integration (optional — without it the dynamic margin is neutralised
-  and control still works)
+- A power meter giving net grid flow, signed
+- A power meter on the wallbox circuit
+- At least one PV production meter — a single array, or an inverter total
+
+**Optional**
+
+| Missing | What you lose | What still works |
+|---|---|---|
+| Second PV array meter | string imbalance sensor | everything else |
+| Mains voltage sensor | ~4% accuracy on the amps calculation | everything else |
+| Solcast | dynamic margin, clear-sky index | everything else |
+
+Set an optional entity to the literal word `none` in the package if you do not
+have it. The total PV sensor falls back to the single array, the imbalance
+sensor turns `unavailable` rather than reporting a meaningless figure, and the
+measurement guard stops requiring a meter that was never there.
+
+Two failures are not survivable and are worth naming: losing the **net grid
+meter** disables all solar control, and losing any **Tesla entity** disables
+everything. Night charging survives both, since it reads no measurement at
+all — which is the point of keeping it separate.
 
 ## Installation
 
@@ -118,19 +137,24 @@ Every external entity is listed in the `ADAPT THIS` block at the top of the
 package file. Home Assistant has no variable mechanism that works both in YAML
 fields and inside Jinja strings, so adaptation is a plain find-and-replace.
 
-| Purpose | Default entity | Notes |
-|---|---|---|
-| Net grid power | `sensor.vue_totalusage_1min` | positive = import |
-| Wallbox power | `sensor.borne_ve_2_1min` | |
-| PV string 1 | `sensor.solar_panels_1_1min` | SW, 2800 Wp |
-| PV string 2 | `sensor.solar_panels_se_8_1min` | SE, 3300 Wp |
-| Mains voltage | `sensor.myups_input_voltage` | optional, falls back to 230 V |
-| Charging amps | `number.model_y_charge_current` | |
-| Charge switch | `switch.model_y_charge` | |
-| State of charge | `sensor.model_y_battery_level` | |
-| Cable connected | `binary_sensor.model_y_charge_cable` | |
-| Solcast today | `sensor.solcast_pv_forecast_forecast_today` | needs `detailedForecast` attribute |
-| Solcast next hour | `sensor.solcast_pv_forecast_forecast_next_hour` | kWh |
+| Purpose | Default entity | | Notes |
+|---|---|---|---|
+| Net grid power | `sensor.vue_totalusage_1min` | required | positive = import |
+| Wallbox power | `sensor.borne_ve_2_1min` | required | |
+| PV array 1 | `sensor.solar_panels_1_1min` | required | SW, 2800 Wp |
+| PV array 2 | `sensor.solar_panels_se_8_1min` | optional | SE, 3300 Wp |
+| Mains voltage | `sensor.myups_input_voltage` | optional | falls back to 230 V |
+| Charging amps | `number.model_y_charge_current` | required | |
+| Charge switch | `switch.model_y_charge` | required | |
+| State of charge | `sensor.model_y_battery_level` | required | |
+| Cable connected | `binary_sensor.model_y_charge_cable` | required | |
+| Solcast today | `sensor.solcast_pv_forecast_forecast_today` | optional | needs `detailedForecast` attribute |
+| Solcast next hour | `sensor.solcast_pv_forecast_forecast_next_hour` | optional | kWh |
+
+Optional entities use `has_value()` rather than a `float(0)` default, so an
+absent meter is distinguished from one genuinely reading zero. That matters:
+with a plain default, a single-array site would silently halve its own total
+and the zero-output guard would never fire.
 
 Two site constants are hardcoded in the string imbalance sensor: the peak watts
 of each array. The wallbox ceiling (32 A) is hardcoded in the target amps

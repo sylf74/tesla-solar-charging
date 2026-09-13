@@ -16,24 +16,53 @@
 #  fields and inside Jinja strings, so a plain find-and-replace is the
 #  honest approach here.
 #
+#  REQUIRED - the package does not work without these
+#
 #    sensor.vue_totalusage_1min      Net grid power, POSITIVE = import
 #                                    (Emporia mains clamps)
 #    sensor.borne_ve_2_1min          Wallbox circuit power (W)
-#    sensor.solar_panels_1_1min      PV string 1 power - here SW, 2800 Wp
-#    sensor.solar_panels_se_8_1min   PV string 2 power - here SE, 3300 Wp
-#    sensor.myups_input_voltage      Mains voltage (optional, falls
-#                                    back to 230 V if missing)
+#    sensor.solar_panels_1_1min      PV array 1 power - here SW, 2800 Wp
+#                                    A single-array site points this at
+#                                    its only meter or inverter total.
 #
 #    number.model_y_charge_current   Tesla charging amps
 #    switch.model_y_charge           Tesla charge on/off
 #    sensor.model_y_battery_level    Tesla state of charge (%)
 #    binary_sensor.model_y_charge_cable   Cable connected (on/off)
 #
+#  OPTIONAL - set to the literal word  none  if absent
+#
+#    sensor.solar_panels_se_8_1min   PV array 2 power - here SE, 3300 Wp
+#                                    Absent: total PV falls back to
+#                                    array 1 alone and the imbalance
+#                                    sensor turns unavailable rather
+#                                    than reporting a meaningless value.
+#
+#    sensor.myups_input_voltage      Mains voltage
+#                                    Absent: 230 V is assumed, costing
+#                                    roughly 4% accuracy on the amps
+#                                    calculation.
+#
 #    sensor.solcast_pv_forecast_forecast_today      attr detailedForecast
 #    sensor.solcast_pv_forecast_forecast_next_hour  kWh
+#                                    Absent: the clear-sky index pins to
+#                                    1, the dynamic margin is neutralised
+#                                    and only the base margin applies.
+#                                    Control still works.
 #
-#  Two site constants are also hardcoded, in "PV string imbalance":
-#  the 3300 and 2800 peak watts of each string.
+#  Two site constants are hardcoded in "PV string imbalance": the peak
+#  watts of each array, 3300 and 2800 here.
+#
+#  DEGRADATION MATRIX
+#
+#    Missing               Lost                        Still works
+#    --------------------- --------------------------- --------------
+#    PV array 2            imbalance sensor            everything else
+#    Mains voltage         ~4% amps accuracy           everything else
+#    Solcast               dynamic margin, sky index   everything else
+#    Wallbox meter         surplus, loop check         night charging
+#    Net grid meter        all solar control           night charging
+#    Any Tesla entity      all control                 nothing
 #  --------------------------------------------------------------------
 
 
@@ -158,16 +187,24 @@ template:
         delay_on: "00:01:00"
         state: >
           {% set ns = namespace(ok = true) %}
+          {#- Required meters: absence or staleness freezes control. -#}
           {% for c in ['sensor.vue_totalusage_1min',
                        'sensor.borne_ve_2_1min',
-                       'sensor.solar_panels_1_1min',
-                       'sensor.solar_panels_se_8_1min'] %}
+                       'sensor.solar_panels_1_1min'] %}
             {% if states[c] is none or not has_value(c) %}
               {% set ns.ok = false %}
             {% elif (now() - states[c].last_reported).total_seconds() > 300 %}
               {% set ns.ok = false %}
             {% endif %}
           {% endfor %}
+          {#- Optional second array: only checked for staleness if it
+              exists at all, so a single-array site is not permanently
+              flagged as unreliable. -#}
+          {% set a2 = 'sensor.solar_panels_se_8_1min' %}
+          {% if states[a2] is not none and has_value(a2)
+                and (now() - states[a2].last_reported).total_seconds() > 300 %}
+            {% set ns.ok = false %}
+          {% endif %}
           {# Zero output in daylight is abnormal on this site: the SW
              array always produces something while the sun is up,
              thunderstorms and grazing light included. Threshold set at
@@ -257,8 +294,13 @@ template:
         device_class: power
         state_class: measurement
         state: >
-          {{ (states('sensor.solar_panels_se_8_1min') | float(0)
-            + states('sensor.solar_panels_1_1min') | float(0)) | round(0) }}
+          {#- Array 2 is optional. has_value() distinguishes a genuinely
+              absent entity from one reading zero, so a single-array site
+              does not silently halve its own total. -#}
+          {% set a1 = states('sensor.solar_panels_1_1min') | float(0) %}
+          {% set a2 = states('sensor.solar_panels_se_8_1min') | float(0)
+                      if has_value('sensor.solar_panels_se_8_1min') else 0 %}
+          {{ (a1 + a2) | round(0) }}
 
       # -- 2.3 Clear-sky reference from Solcast ------------------------
       # Uses the 90th percentile of the current 30-minute slot: the
@@ -304,6 +346,9 @@ template:
       - name: "PV string imbalance"
         unique_id: pv_string_imbalance
         state_class: measurement
+        availability: >
+          {{ has_value('sensor.solar_panels_1_1min')
+             and has_value('sensor.solar_panels_se_8_1min') }}
         state: >
           {% set se = states('sensor.solar_panels_se_8_1min') | float(0) / 3300 %}
           {% set sw = states('sensor.solar_panels_1_1min')    | float(0) / 2800 %}
