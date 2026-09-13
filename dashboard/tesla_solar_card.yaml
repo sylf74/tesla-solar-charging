@@ -1,0 +1,75 @@
+# Dashboard card for the tesla_solar package.
+# Paste into a Lovelace view using "Edit in YAML".
+
+type: vertical-stack
+cards:
+  - type: entities
+    title: Tesla charging control
+    entities:
+      - entity: input_boolean.tesla_solar_charging
+      - entity: input_boolean.tesla_night_charging
+      - entity: binary_sensor.measurements_reliable
+        secondary_info: last-changed
+      - type: attribute
+        entity: binary_sensor.measurements_reliable
+        attribute: cause
+        name: Diagnostic
+
+      - type: divider
+
+      # The three lines that matter most, in order:
+      #   1. smoothed surplus  -> what the controller sees
+      #   2. target vs applied -> is the controller acting?
+      #   3. applied vs actual -> is the car obeying?
+      - entity: sensor.solar_surplus_smoothed
+        name: Smoothed surplus
+      - entity: sensor.tesla_target_amps
+        name: Target amps
+      - type: attribute
+        entity: sensor.tesla_target_amps
+        attribute: applied_margin
+        name: Applied margin
+      - entity: number.model_y_charge_current
+        name: Applied amps
+      - entity: sensor.borne_ve_2_1min
+        name: Actual wallbox power
+
+      - type: divider
+
+      - entity: sensor.clear_sky_index
+        name: Clear sky index
+      - entity: sensor.sky_volatility
+        name: Sky volatility
+      - entity: sensor.pv_string_imbalance
+        name: String imbalance
+
+      - type: divider
+
+      - entity: sensor.tesla_command_budget_left
+        name: API budget left
+      - entity: sensor.tesla_min_interval
+        name: Min interval between commands
+      - entity: counter.tesla_fleet_commands
+        name: Commands sent today
+
+  - type: entities
+    title: Settings
+    entities:
+      - entity: input_number.tesla_base_margin
+      - entity: input_number.tesla_solar_soc_target
+      - entity: input_number.tesla_night_soc_target
+      - entity: input_number.tesla_night_amps
+      - entity: input_datetime.tesla_off_peak_start
+      - entity: input_datetime.tesla_off_peak_end
+      - entity: input_number.tesla_command_budget
+
+  - type: history-graph
+    hours_to_show: 12
+    title: Control tracking
+    entities:
+      - entity: sensor.pv_production_total
+        name: PV output
+      - entity: sensor.solar_surplus_smoothed
+        name: Surplus
+      - entity: sensor.borne_ve_2_1min
+        name: Wallbox

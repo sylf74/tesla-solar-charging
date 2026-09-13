@@ -1,0 +1,734 @@
+# =====================================================================
+#  Tesla charging control from photovoltaic surplus
+#  Single phase 230 V / 32 A wallbox - official Tesla Fleet integration
+#  Metering: Emporia Vue - Forecast: Solcast
+#
+#  Install: config/packages/tesla_solar.yaml
+#  Enable in configuration.yaml:
+#     homeassistant:
+#       packages: !include_dir_named packages
+# =====================================================================
+#
+#  ------------------------- ADAPT THIS -------------------------------
+#  Every external entity this package reads is listed below. To reuse
+#  this package on another setup, search and replace each one.
+#  Home Assistant offers no variable mechanism that works both in YAML
+#  fields and inside Jinja strings, so a plain find-and-replace is the
+#  honest approach here.
+#
+#    sensor.vue_totalusage_1min      Net grid power, POSITIVE = import
+#                                    (Emporia mains clamps)
+#    sensor.borne_ve_2_1min          Wallbox circuit power (W)
+#    sensor.solar_panels_1_1min      PV string 1 power - here SW, 2800 Wp
+#    sensor.solar_panels_se_8_1min   PV string 2 power - here SE, 3300 Wp
+#    sensor.myups_input_voltage      Mains voltage (optional, falls
+#                                    back to 230 V if missing)
+#
+#    number.model_y_charge_current   Tesla charging amps
+#    switch.model_y_charge           Tesla charge on/off
+#    sensor.model_y_battery_level    Tesla state of charge (%)
+#    binary_sensor.model_y_charge_cable   Cable connected (on/off)
+#
+#    sensor.solcast_pv_forecast_forecast_today      attr detailedForecast
+#    sensor.solcast_pv_forecast_forecast_next_hour  kWh
+#
+#  Two site constants are also hardcoded, in "PV string imbalance":
+#  the 3300 and 2800 peak watts of each string.
+#  --------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------
+# 1. User-facing settings
+# ---------------------------------------------------------------------
+input_boolean:
+  tesla_solar_charging:
+    name: Solar-tracking charging
+    icon: mdi:solar-power-variant
+
+  tesla_night_charging:
+    name: Off-peak night charging
+    icon: mdi:weather-night
+
+input_datetime:
+  tesla_off_peak_start:
+    name: Off-peak start
+    has_date: false
+    has_time: true
+
+  tesla_off_peak_end:
+    name: Off-peak end
+    has_date: false
+    has_time: true
+
+input_number:
+  tesla_base_margin:
+    name: Base safety margin (W)
+    min: 0
+    max: 1000
+    step: 50
+    unit_of_measurement: W
+    icon: mdi:shield-sun
+
+  tesla_solar_soc_target:
+    name: SOC target, solar charging (%)
+    min: 50
+    max: 100
+    step: 5
+    unit_of_measurement: "%"
+    icon: mdi:battery-charging-80
+
+  tesla_command_budget:
+    name: Fleet API command budget per day
+    min: 20
+    max: 500
+    step: 1
+    initial: 179
+    icon: mdi:api
+
+  tesla_night_soc_target:
+    name: SOC target, night charging (%)
+    min: 50
+    max: 100
+    step: 5
+    unit_of_measurement: "%"
+    icon: mdi:weather-night
+
+  tesla_night_amps:
+    name: Night charging amps (A)
+    min: 6
+    max: 32
+    step: 1
+    initial: 32
+    unit_of_measurement: A
+    icon: mdi:flash
+
+counter:
+  # Local counter. This is NOT Tesla's real quota - Home Assistant has
+  # no way to read that. It is a self-imposed guard rail, deliberately
+  # stricter than the assumed limit.
+  tesla_fleet_commands:
+    name: Fleet API commands today
+    initial: 0
+    step: 1
+    icon: mdi:counter
+
+
+# ---------------------------------------------------------------------
+# 2. Derived sensors
+# ---------------------------------------------------------------------
+template:
+  - binary_sensor:
+
+      # -- Solar window ------------------------------------------------
+      # Starts at 5 degrees of elevation. Below that, output is
+      # negligible and the Solcast reference too noisy to regulate on.
+      # This window is what stops the solar logic from touching
+      # anything at night.
+      - name: "Solar window"
+        unique_id: solar_window
+        state: >
+          {{ state_attr('sun.sun', 'elevation') | float(-90) > 5 }}
+
+      # -- Measurements reliable ---------------------------------------
+      # Guard rail checked before any command is sent. Three failure
+      # modes are covered:
+      #   a) sensor unavailable  -> Emporia cloud down, wifi lost
+      #   b) sensor frozen       -> the cloud answers but stops
+      #                             refreshing; the value stays
+      #                             plausible, which is the nastiest
+      #                             case of the three
+      #   c) zero output in daylight -> sun is up and 0 W produced:
+      #                             either a mains outage (in which
+      #                             case the wallbox has no power
+      #                             either, so freezing is harmless),
+      #                             or a metering fault. Either way,
+      #                             change nothing.
+      #
+      # delay_on: one minute of healthy readings is required before
+      # control resumes, so a single stray refresh does not restart it.
+      - name: "Measurements reliable"
+        unique_id: measurements_reliable
+        delay_on: "00:01:00"
+        state: >
+          {% set ns = namespace(ok = true) %}
+          {% for c in ['sensor.vue_totalusage_1min',
+                       'sensor.borne_ve_2_1min',
+                       'sensor.solar_panels_1_1min',
+                       'sensor.solar_panels_se_8_1min'] %}
+            {% if states[c] is none or not has_value(c) %}
+              {% set ns.ok = false %}
+            {% elif (now() - states[c].last_reported).total_seconds() > 300 %}
+              {% set ns.ok = false %}
+            {% endif %}
+          {% endfor %}
+          {# Zero output in daylight is abnormal on this site: the SW
+             array always produces something while the sun is up,
+             thunderstorms and grazing light included. Threshold set at
+             10 W rather than 0 to absorb sensor rounding.
+             If this ever trips wrongly on a winter morning, enable the
+             commented line below: it only alerts when Solcast actually
+             expected production at that moment. #}
+          {# Optional Solcast gate. To enable it, replace the condition
+             below with this one - it only alerts when Solcast actually
+             expected production at that moment:
+               {% if is_state('binary_sensor.solar_window', 'on')
+                     and states('sensor.clear_sky_reference') | float(0) > 400
+                     and states('sensor.pv_production_total') | float(-1) < 10 %}
+             A Jinja comment cannot sit inside a {% raw %}{% if %}{% endraw %}
+             expression, hence this separate block. #}
+          {% if is_state('binary_sensor.solar_window', 'on')
+                and states('sensor.pv_production_total') | float(-1) < 10 %}
+            {% set ns.ok = false %}
+          {% endif %}
+          {{ ns.ok }}
+        attributes:
+          cause: >
+            {% if not has_value('sensor.vue_totalusage_1min') %}
+              Grid meter unavailable
+            {% elif not has_value('sensor.borne_ve_2_1min') %}
+              Wallbox meter unavailable
+            {% elif states['sensor.vue_totalusage_1min'] is not none
+                 and (now() - states['sensor.vue_totalusage_1min'].last_reported).total_seconds() > 300 %}
+              Readings frozen for over 5 minutes
+            {% elif is_state('binary_sensor.solar_window', 'on')
+                 and states('sensor.pv_production_total') | float(-1) < 10 %}
+              Zero PV output while the sun is up
+            {% else %}
+              OK
+            {% endif %}
+
+      # -- Off-peak window ---------------------------------------------
+      # Handles windows that cross midnight (e.g. 22:00 -> 06:00).
+      - name: "Off peak window"
+        unique_id: off_peak_window
+        state: >
+          {% set now_hm = now().strftime('%H:%M') %}
+          {% set start  = states('input_datetime.tesla_off_peak_start')[0:5] %}
+          {% set end    = states('input_datetime.tesla_off_peak_end')[0:5] %}
+          {% if start < end %}
+            {{ start <= now_hm < end }}
+          {% else %}
+            {{ now_hm >= start or now_hm < end }}
+          {% endif %}
+
+  - sensor:
+
+      # -- 2.1 Available surplus ---------------------------------------
+      # Convention: sensor.vue_totalusage_1min POSITIVE = grid import.
+      # If your clamps are mounted the other way round, negate "grid".
+      #
+      # The car's current draw is added back in: what the car is
+      # already pulling is part of what is available. Without this the
+      # controller would collapse to zero as soon as it reached
+      # equilibrium.
+      - name: "Solar surplus raw"
+        unique_id: solar_surplus_raw
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        state: >
+          {% set grid = states('sensor.vue_totalusage_1min') | float(0) %}
+          {% set car  = states('sensor.borne_ve_2_1min') | float(0) %}
+          {{ (car - grid) | round(0) }}
+          {#- Fallback if no net-grid entity exists on your setup.
+              Mathematically equivalent, but sums three sensors instead
+              of one, so three times as many chances to drift:
+              surplus = pv_total + wallbox - total_usage -#}
+        availability: >
+          {{ has_value('sensor.vue_totalusage_1min')
+             and has_value('sensor.borne_ve_2_1min') }}
+
+      # -- 2.2 Total PV output -----------------------------------------
+      - name: "PV production total"
+        unique_id: pv_production_total
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        state: >
+          {{ (states('sensor.solar_panels_se_8_1min') | float(0)
+            + states('sensor.solar_panels_1_1min') | float(0)) | round(0) }}
+
+      # -- 2.3 Clear-sky reference from Solcast ------------------------
+      # Uses the 90th percentile of the current 30-minute slot: the
+      # best free proxy for output under a clear sky.
+      # detailedForecast holds kW, hence the conversion to W.
+      - name: "Clear sky reference"
+        unique_id: clear_sky_reference
+        unit_of_measurement: W
+        device_class: power
+        state: >
+          {% set fc = state_attr('sensor.solcast_pv_forecast_forecast_today',
+                                 'detailedForecast') %}
+          {% if fc is not none %}
+            {% set ns = namespace(val=0) %}
+            {% for slot in fc %}
+              {% if slot.period_start <= now() < slot.period_start + timedelta(minutes=30) %}
+                {% set ns.val = (slot.pv_estimate90 | float(0)) * 1000 %}
+              {% endif %}
+            {% endfor %}
+            {{ ns.val | round(0) }}
+          {% else %}
+            0
+          {% endif %}
+
+      # -- 2.4 Clear-sky index -----------------------------------------
+      # ~1.0 = clear | 0.5 = hazy | <0.3 = overcast
+      # Below 300 W of reference (dawn/dusk) the ratio is meaningless,
+      # so it is pinned to 1.
+      - name: "Clear sky index"
+        unique_id: clear_sky_index
+        state_class: measurement
+        state: >
+          {% set p   = states('sensor.pv_production_total') | float(0) %}
+          {% set ref = states('sensor.clear_sky_reference') | float(0) %}
+          {{ (p / ref) | round(3) if ref > 300 else 1 }}
+
+      # -- 2.5 Imbalance between the two arrays ------------------------
+      # Each string normalised by its own peak power.
+      #   near 0        -> both react alike = cloud over the whole site
+      #   strongly != 0 -> localised shading on one array only
+      # Useful so recurring shade (tree, chimney, canopy post) is not
+      # mistaken for deteriorating weather.
+      - name: "PV string imbalance"
+        unique_id: pv_string_imbalance
+        state_class: measurement
+        state: >
+          {% set se = states('sensor.solar_panels_se_8_1min') | float(0) / 3300 %}
+          {% set sw = states('sensor.solar_panels_1_1min')    | float(0) / 2800 %}
+          {{ (se - sw) | round(3) }}
+
+      # -- 2.6 Target amperage -----------------------------------------
+      # Dynamic margin: the more unstable the sky, the more headroom is
+      # kept, to avoid importing from the grid on every passing cumulus.
+      - name: "Tesla target amps"
+        unique_id: tesla_target_amps
+        unit_of_measurement: A
+        state_class: measurement
+        state: >
+          {% set surplus = states('sensor.solar_surplus_smoothed') | float(0) %}
+          {% set vol     = states('sensor.sky_volatility') | float(0) %}
+          {% set base    = states('input_number.tesla_base_margin') | float(200) %}
+          {% set margin  = base + (0 if vol < 0.05 else (250 if vol < 0.15 else 600)) %}
+          {#- Measured voltage rather than a nominal 230 V. Read
+              opportunistically: any missing or implausible value falls
+              back to 230, so control is never blocked by the absence
+              of this entity.
+              More accurate variant if wanted: the Tesla reports the
+              voltage measured at its own terminals while charging
+              (sensor.<vehicle>_charger_voltage), which accounts for
+              cable drop. Insert it first in the cascade. -#}
+          {% set u       = states('sensor.myups_input_voltage') | float(230) %}
+          {% set u       = u if 200 < u < 260 else 230 %}
+          {% set a       = ((surplus - margin) / u) | round(0) %}
+          {#- Wallbox limit: 32 A. Do NOT read the entity's max
+              attribute - with the cable unplugged it is only a leftover
+              from the last session and would read 16.
+              In solar mode this ceiling is never reached anyway:
+              6.1 kWp minus house load tops out around 24 A. -#}
+          {{ [[a, 32] | min, 0] | max }}
+        attributes:
+          applied_margin: >
+            {% set vol  = states('sensor.sky_volatility') | float(0) %}
+            {% set base = states('input_number.tesla_base_margin') | float(200) %}
+            {{ base + (0 if vol < 0.05 else (250 if vol < 0.15 else 600)) }}
+
+      # -- 2.7 Remaining command budget --------------------------------
+      - name: "Tesla command budget left"
+        unique_id: tesla_command_budget_left
+        state_class: measurement
+        state: >
+          {{ [ (states('input_number.tesla_command_budget') | int(179))
+               - (states('counter.tesla_fleet_commands') | int(0)), 0 ] | max }}
+
+      # -- 2.8 Minimum interval between commands -----------------------
+      # Spreads the remaining budget over the remaining daylight.
+      # Morning with a full budget -> short interval, fine tracking is
+      # affordable. Late afternoon with 15 commands left -> the interval
+      # stretches by itself and the budget never runs dry.
+      # Clamped between 30 s and 10 min.
+      - name: "Tesla min interval"
+        unique_id: tesla_min_interval
+        unit_of_measurement: s
+        state_class: measurement
+        state: >
+          {% set left    = [ states('sensor.tesla_command_budget_left') | int(0), 1 ] | max %}
+          {% set setting = state_attr('sun.sun', 'next_setting') %}
+          {% set end     = as_timestamp(setting) if setting else (as_timestamp(now()) + 3600) %}
+          {% set sec     = [ end - as_timestamp(now()), 600 ] | max %}
+          {{ [ [ (sec / left) | round(0), 30 ] | max, 600 ] | min }}
+
+
+# ---------------------------------------------------------------------
+# 3. Statistical smoothing
+#    Smoothing is the heart of the system: without it, a command goes
+#    out to the car every thirty seconds for no reason.
+# ---------------------------------------------------------------------
+sensor:
+  - platform: statistics
+    name: "Solar surplus smoothed"
+    unique_id: solar_surplus_smoothed
+    entity_id: sensor.solar_surplus_raw
+    state_characteristic: mean
+    max_age:
+      minutes: 3
+    sampling_size: 300
+
+  # Standard deviation of the index over 15 min = how much the sky is
+  # moving. This is what separates stable overcast (regulate calmly)
+  # from drifting cumulus (damp hard).
+  - platform: statistics
+    name: "Sky volatility"
+    unique_id: sky_volatility
+    entity_id: sensor.clear_sky_index
+    state_characteristic: standard_deviation
+    max_age:
+      minutes: 15
+    sampling_size: 900
+
+
+# ---------------------------------------------------------------------
+# 4. Automations
+# ---------------------------------------------------------------------
+automation:
+
+  # -- 4.1 Fine control --------------------------------------------
+  # Evaluated every 30 s, but a command only goes out when the change
+  # is genuinely significant - see the asymmetric dead band below.
+  - id: tesla_solar_control
+    alias: "Tesla - surplus control"
+    mode: single
+    max_exceeded: silent
+    trigger:
+      - platform: time_pattern
+        seconds: "/30"
+    condition:
+      - condition: state
+        entity_id: input_boolean.tesla_solar_charging
+        state: "on"
+      - condition: state
+        entity_id: binary_sensor.solar_window
+        state: "on"
+      - condition: state
+        alias: "Freeze control when readings are doubtful"
+        entity_id: binary_sensor.measurements_reliable
+        state: "on"
+      - condition: state
+        entity_id: binary_sensor.model_y_charge_cable
+        state: "on"
+      - condition: numeric_state
+        entity_id: sensor.tesla_target_amps
+        above: 4
+      - condition: numeric_state
+        entity_id: sensor.tesla_command_budget_left
+        above: 0
+      - condition: template
+        alias: "SOC below target"
+        value_template: >
+          {{ states('sensor.model_y_battery_level') | float(100)
+             < states('input_number.tesla_solar_soc_target') | float(80) }}
+      - condition: template
+        alias: "Asymmetric dead band and pacing"
+        value_template: >
+          {% set target   = states('sensor.tesla_target_amps') | float(0) %}
+          {% set current  = states('number.model_y_charge_current') | float(0) %}
+          {% set delta    = target - current %}
+          {% set interval = states('sensor.tesla_min_interval') | float(120) %}
+          {% set elapsed  = (now() -
+               states.counter.tesla_fleet_commands.last_changed).total_seconds() %}
+          {% if delta <= -1 %}
+            {# DOWN: 1 A threshold, half the interval, 30 s floor.
+               Every minute of delay here is paid for in grid import. #}
+            {{ elapsed >= ([interval / 2, 30] | max) }}
+          {% elif delta >= 2 %}
+            {# UP: 2 A threshold and the full interval. Waiting costs a
+               few hundred watts; rushing costs API budget, and often
+               for nothing since the next cloud will bring it back down. #}
+            {{ elapsed >= interval }}
+          {% else %}
+            false
+          {% endif %}
+    action:
+      - service: number.set_value
+        target:
+          entity_id: number.model_y_charge_current
+        data:
+          value: "{{ states('sensor.tesla_target_amps') | int }}"
+      - service: counter.increment
+        target:
+          entity_id: counter.tesla_fleet_commands
+      - if:
+          - condition: state
+            entity_id: switch.model_y_charge
+            state: "off"
+        then:
+          - delay: "00:00:05"
+          - service: switch.turn_on
+            target:
+              entity_id: switch.model_y_charge
+          - service: counter.increment
+            target:
+              entity_id: counter.tesla_fleet_commands
+
+
+  # -- 4.2 Stop ------------------------------------------------------
+  # Deliberate asymmetry: 10 min below threshold to stop, 5 min above
+  # to resume. That is what prevents the yo-yo.
+  # 5 A is the Tesla floor - below it you do not reduce, you stop.
+  - id: tesla_solar_stop
+    alias: "Tesla - stop, no surplus"
+    mode: single
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.tesla_target_amps
+        below: 5
+        for: "00:10:00"
+    condition:
+      - condition: state
+        entity_id: input_boolean.tesla_solar_charging
+        state: "on"
+      - condition: state
+        alias: "Never stop outside the solar window"
+        entity_id: binary_sensor.solar_window
+        state: "on"
+      - condition: state
+        alias: "Freeze control when readings are doubtful"
+        entity_id: binary_sensor.measurements_reliable
+        state: "on"
+      - condition: state
+        alias: "Never cut an off-peak charge"
+        entity_id: binary_sensor.off_peak_window
+        state: "off"
+      - condition: state
+        entity_id: switch.model_y_charge
+        state: "on"
+      - condition: template
+        alias: "Unless Solcast expects sun back within the hour"
+        value_template: >
+          {{ states('sensor.solcast_pv_forecast_forecast_next_hour')
+             | float(0) < 1.5 }}
+    action:
+      - service: switch.turn_off
+        target:
+          entity_id: switch.model_y_charge
+      - service: counter.increment
+        target:
+          entity_id: counter.tesla_fleet_commands
+
+  # -- 4.3 Resume ----------------------------------------------------
+  - id: tesla_solar_resume
+    alias: "Tesla - resume on surplus"
+    mode: single
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.tesla_target_amps
+        above: 6
+        for: "00:05:00"
+    condition:
+      - condition: state
+        entity_id: input_boolean.tesla_solar_charging
+        state: "on"
+      - condition: state
+        entity_id: binary_sensor.solar_window
+        state: "on"
+      - condition: state
+        alias: "Freeze control when readings are doubtful"
+        entity_id: binary_sensor.measurements_reliable
+        state: "on"
+      - condition: state
+        entity_id: binary_sensor.model_y_charge_cable
+        state: "on"
+      - condition: state
+        entity_id: switch.model_y_charge
+        state: "off"
+      - condition: template
+        value_template: >
+          {{ states('sensor.model_y_battery_level') | float(100)
+             < states('input_number.tesla_solar_soc_target') | float(80) }}
+    action:
+      - service: number.set_value
+        target:
+          entity_id: number.model_y_charge_current
+        data:
+          value: "{{ states('sensor.tesla_target_amps') | int }}"
+      - service: counter.increment
+        target:
+          entity_id: counter.tesla_fleet_commands
+      - delay: "00:00:05"
+      - service: switch.turn_on
+        target:
+          entity_id: switch.model_y_charge
+      - service: counter.increment
+        target:
+          entity_id: counter.tesla_fleet_commands
+
+  # -- 4.4 Daily counter reset ---------------------------------------
+  # At sunrise rather than midnight: the budget covers the solar day,
+  # and the 2 to 4 commands from the night charge are cleared before
+  # they start eating into it.
+  - id: tesla_fleet_counter_reset
+    alias: "Tesla - reset Fleet API counter"
+    mode: single
+    trigger:
+      - platform: sun
+        event: sunrise
+    action:
+      - service: counter.reset
+        target:
+          entity_id: counter.tesla_fleet_commands
+
+  # -- 4.5 Doubtful readings alert -----------------------------------
+  # Control is already frozen by the conditions above; this only tells
+  # you about it. 15 min so a transient refresh gap stays silent.
+  - id: tesla_readings_doubtful
+    alias: "Tesla - doubtful readings"
+    mode: single
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.measurements_reliable
+        to: "off"
+        for: "00:15:00"
+    action:
+      - service: persistent_notification.create
+        data:
+          notification_id: tesla_readings_doubtful
+          title: "Solar charging control frozen"
+          message: >
+            Cause: {{ state_attr('binary_sensor.measurements_reliable', 'cause') }}.
+            Amperage held at {{ states('number.model_y_charge_current') }} A
+            until readings return.
+
+  - id: tesla_readings_restored
+    alias: "Tesla - readings restored"
+    mode: single
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.measurements_reliable
+        to: "on"
+    action:
+      - service: persistent_notification.dismiss
+        data:
+          notification_id: tesla_readings_doubtful
+
+  # -- 4.6 Loop check: command vs reality ----------------------------
+  # If the car does not apply the requested amperage - it sometimes
+  # caps itself, or ignores a command - the wallbox clamp reveals it.
+  # Without this check the controller would be steering into the void.
+  - id: tesla_command_mismatch
+    alias: "Tesla - command vs reality mismatch"
+    mode: single
+    trigger:
+      - platform: time_pattern
+        minutes: "/10"
+    condition:
+      - condition: state
+        entity_id: switch.model_y_charge
+        state: "on"
+      - condition: template
+        value_template: >
+          {% set u = states('sensor.myups_input_voltage') | float(230) %}
+          {% set u = u if 200 < u < 260 else 230 %}
+          {% set requested = states('number.model_y_charge_current') | float(0) * u %}
+          {% set actual    = states('sensor.borne_ve_2_1min') | float(0) %}
+          {{ requested > 0 and (requested - actual) > 800 }}
+    action:
+      - service: persistent_notification.create
+        data:
+          title: "Tesla charging: mismatch detected"
+          message: >
+            Requested {{ states('number.model_y_charge_current') }} A
+            but {{ states('sensor.borne_ve_2_1min') }} W measured at the panel.
+
+
+# ---------------------------------------------------------------------
+# 5. Off-peak night charging (winter)
+#    Entirely separate from the solar logic: no modulation, no surplus
+#    reading, fixed amperage. An Emporia outage in January must not
+#    stop you from charging.
+# ---------------------------------------------------------------------
+
+  # -- 5.1 Start at the beginning of off-peak ------------------------
+  - id: tesla_night_start
+    alias: "Tesla - start night charge"
+    mode: single
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.off_peak_window
+        to: "on"
+    condition:
+      - condition: state
+        entity_id: input_boolean.tesla_night_charging
+        state: "on"
+      - condition: state
+        entity_id: binary_sensor.model_y_charge_cable
+        state: "on"
+      - condition: template
+        alias: "SOC below night target"
+        value_template: >
+          {{ states('sensor.model_y_battery_level') | float(100)
+             < states('input_number.tesla_night_soc_target') | float(80) }}
+    action:
+      # Reset to full amperage: the solar controller has very likely
+      # left the car at 6 or 8 A at the end of the day. Without this
+      # line you would charge all night at a crawl.
+      - service: number.set_value
+        target:
+          entity_id: number.model_y_charge_current
+        data:
+          value: "{{ states('input_number.tesla_night_amps') | int(32) }}"
+      - service: counter.increment
+        target:
+          entity_id: counter.tesla_fleet_commands
+      - delay: "00:00:05"
+      - service: switch.turn_on
+        target:
+          entity_id: switch.model_y_charge
+      - service: counter.increment
+        target:
+          entity_id: counter.tesla_fleet_commands
+
+  # -- 5.2 Stop at the end of off-peak -------------------------------
+  - id: tesla_night_stop
+    alias: "Tesla - stop at end of off-peak"
+    mode: single
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.off_peak_window
+        to: "off"
+    condition:
+      - condition: state
+        entity_id: input_boolean.tesla_night_charging
+        state: "on"
+      - condition: state
+        entity_id: switch.model_y_charge
+        state: "on"
+    action:
+      - service: switch.turn_off
+        target:
+          entity_id: switch.model_y_charge
+      - service: counter.increment
+        target:
+          entity_id: counter.tesla_fleet_commands
+
+  # -- 5.3 Target reached during the night ---------------------------
+  - id: tesla_night_target_reached
+    alias: "Tesla - night SOC target reached"
+    mode: single
+    trigger:
+      - platform: template
+        value_template: >
+          {{ states('sensor.model_y_battery_level') | float(0)
+             >= states('input_number.tesla_night_soc_target') | float(80) }}
+    condition:
+      - condition: state
+        entity_id: binary_sensor.off_peak_window
+        state: "on"
+      - condition: state
+        entity_id: switch.model_y_charge
+        state: "on"
+    action:
+      - service: switch.turn_off
+        target:
+          entity_id: switch.model_y_charge
+      - service: counter.increment
+        target:
+          entity_id: counter.tesla_fleet_commands
