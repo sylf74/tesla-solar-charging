@@ -388,6 +388,29 @@ sensor:
   # Standard deviation of the index over 15 min = how much the sky is
   # moving. This is what separates stable overcast (regulate calmly)
   # from drifting cumulus (damp hard).
+  # Sustained-state sensors. A numeric_state trigger only fires when the
+  # value crosses its threshold, so a target that was already below 5 A
+  # when the package loaded would never arm the stop automation. Reading
+  # a rolling max/min makes the decision state-based instead of
+  # edge-based, and survives a restart.
+  - platform: statistics
+    name: "Tesla target amps max 10min"
+    unique_id: tesla_target_amps_max_10min
+    entity_id: sensor.tesla_target_amps
+    state_characteristic: value_max
+    max_age:
+      minutes: 10
+    sampling_size: 300
+
+  - platform: statistics
+    name: "Tesla target amps min 5min"
+    unique_id: tesla_target_amps_min_5min
+    entity_id: sensor.tesla_target_amps
+    state_characteristic: value_min
+    max_age:
+      minutes: 5
+    sampling_size: 300
+
   - platform: statistics
     name: "Sky volatility"
     unique_id: sky_volatility
@@ -490,18 +513,16 @@ automation:
     alias: "Tesla - stop, no surplus"
     mode: single
     trigger:
-      - platform: numeric_state
-        entity_id: sensor.tesla_target_amps
-        below: 5
-        for: "00:10:00"
+      - platform: time_pattern
+        minutes: "/2"
     condition:
       - condition: state
         entity_id: input_boolean.tesla_solar_charging
         state: "on"
-      - condition: state
-        alias: "Never stop outside the solar window"
-        entity_id: binary_sensor.solar_window
-        state: "on"
+      # No solar-window gate here, deliberately. Gating the stop on the
+      # solar window meant a charge still running at dusk could never be
+      # cut, and would sit at 5 A all evening. The off-peak condition
+      # below is what protects night charging.
       - condition: state
         alias: "Freeze control when readings are doubtful"
         entity_id: binary_sensor.measurements_reliable
@@ -513,6 +534,10 @@ automation:
       - condition: state
         entity_id: switch.model_y_charge
         state: "on"
+      - condition: numeric_state
+        alias: "Target has stayed below 5 A for the whole window"
+        entity_id: sensor.tesla_target_amps_max_10min
+        below: 5
       - condition: template
         alias: "Unless Solcast expects sun back within the hour"
         value_template: >
@@ -531,10 +556,8 @@ automation:
     alias: "Tesla - resume on surplus"
     mode: single
     trigger:
-      - platform: numeric_state
-        entity_id: sensor.tesla_target_amps
-        above: 6
-        for: "00:05:00"
+      - platform: time_pattern
+        minutes: "/2"
     condition:
       - condition: state
         entity_id: input_boolean.tesla_solar_charging
@@ -556,6 +579,10 @@ automation:
         value_template: >
           {{ states('sensor.model_y_battery_level') | float(100)
              < states('input_number.tesla_solar_soc_target') | float(80) }}
+      - condition: numeric_state
+        alias: "Target has stayed above 6 A for the whole window"
+        entity_id: sensor.tesla_target_amps_min_5min
+        above: 6
     action:
       - service: number.set_value
         target:
