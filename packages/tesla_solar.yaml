@@ -50,15 +50,19 @@ input_boolean:
     icon: mdi:weather-night
 
 input_datetime:
+  # Defaults reflect a common French off-peak window. A window that
+  # crosses midnight is supported; start == end disables night charging.
   tesla_off_peak_start:
     name: Off-peak start
     has_date: false
     has_time: true
+    initial: "22:00:00"
 
   tesla_off_peak_end:
     name: Off-peak end
     has_date: false
     has_time: true
+    initial: "06:00:00"
 
 input_number:
   tesla_base_margin:
@@ -66,6 +70,7 @@ input_number:
     min: 0
     max: 1000
     step: 50
+    initial: 400
     unit_of_measurement: W
     icon: mdi:shield-sun
 
@@ -74,6 +79,7 @@ input_number:
     min: 50
     max: 100
     step: 5
+    initial: 90
     unit_of_measurement: "%"
     icon: mdi:battery-charging-80
 
@@ -90,6 +96,7 @@ input_number:
     min: 50
     max: 100
     step: 5
+    initial: 80
     unit_of_measurement: "%"
     icon: mdi:weather-night
 
