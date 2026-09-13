@@ -74,7 +74,7 @@ The card in `dashboard/tesla_solar_card.yaml` is organised around the three
 gaps that matter, in reading order: what the controller sees, what it commands,
 and what the car actually does.
 
-![Control card](docs/img/dashboard-control.png)
+<img src="docs/img/dashboard-control.png" width="711" alt="Control card">
 
 `Smoothed surplus` negative means the house is importing — target amps
 correctly falls to zero. `Clear sky index` around 0.43 indicates hazy
@@ -84,7 +84,7 @@ a 250 W margin is applied on top of the base margin.
 `Min interval between commands` is derived, not configured: the remaining API
 budget spread over the remaining daylight.
 
-![Settings card](docs/img/dashboard-settings.png)
+<img src="docs/img/dashboard-settings.png" width="686" alt="Settings card">
 
 The history graph is the real tuning instrument. If the wallbox trace follows
 the surplus with acceptable lag and no sawtooth, the controller is well tuned.
