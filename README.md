@@ -51,6 +51,32 @@ The interval is not fixed. The remaining command budget is spread over the
 remaining daylight, so tracking is fine in the morning and automatically
 coarsens if the budget runs low.
 
+### What Solcast is, and is not, used for
+
+Solcast informs caution. It never makes a decision.
+
+The only thing read from it is the 90th-percentile forecast for the current
+half-hour slot, which serves as a clear-sky reference. Actual output divided by
+that reference gives the clear-sky index; the standard deviation of that index
+over 15 minutes gives sky volatility; volatility widens the safety margin. That
+is the whole chain, and it ends at a margin — not at a command.
+
+No automation reads a forecast directly. Nothing starts, stops or changes
+amperage because of what the weather is predicted to do. If the Solcast
+integration fails, the index pins to 1, the dynamic margin disappears, and
+control carries on using the base margin alone.
+
+This is deliberate, and it was not always the case. An earlier version vetoed
+the stop automation whenever the forecast promised sun within the hour. On a
+sunny afternoon that condition is permanently true, so the stop was disabled
+exactly when it was needed — and it measured the wrong quantity anyway, since a
+surplus usually vanishes because house load rose, not because production fell.
+A forecast describes the sky. It cannot see your dishwasher.
+
+The legitimate place for a forecast to decide something is planning, not
+control: raising the SOC target today because the next three days look grey.
+That would be a separate mechanism, operating on a different timescale.
+
 ### Guard rails
 
 **Measurement sanity.** Control freezes entirely if any meter goes unavailable,
@@ -106,7 +132,7 @@ the surplus with acceptable lag and no sawtooth, the controller is well tuned.
 |---|---|---|
 | Second PV array meter | string imbalance sensor | everything else |
 | Mains voltage sensor | ~4% accuracy on the amps calculation | everything else |
-| Solcast | dynamic margin, clear-sky index | everything else |
+| Solcast | dynamic margin, clear-sky index | all control decisions |
 
 Set an optional entity to the literal word `none` in the package if you do not
 have it. The total PV sensor falls back to the single array, the imbalance
