@@ -136,6 +136,15 @@ a 250 W margin is applied on top of the base margin.
 `Min interval between commands` is derived, not configured: the remaining API
 budget spread over the remaining daylight.
 
+A second file, `dashboard/tesla_solar_diagnostics.yaml`, is a full diagnostic
+view for analysing a day after the fact. It is built in reading order: what the
+controller saw, what it decided and whether the car obeyed, why it decided that,
+what gated it, and finally what it cost against what it returned. Each graph
+only makes sense once the previous one has answered yes.
+
+Section 4 is the one that earns its place on a day when nothing happened: every
+condition that can silently stop an automation, on one timeline.
+
 The history graph is the real tuning instrument. If the wallbox trace follows
 the surplus with acceptable lag and no sawtooth, the controller is well tuned.
 

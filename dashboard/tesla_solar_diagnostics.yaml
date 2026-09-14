@@ -1,0 +1,117 @@
+# Diagnostic view for analysing a day of control.
+# Add as a new Lovelace view, then "Edit in YAML" and paste.
+#
+# Reading order matters. Each graph answers one question, and only
+# makes sense once the previous one has answered yes.
+
+type: sections
+title: Charging diagnostics
+icon: mdi:chart-timeline-variant
+sections:
+
+  # 1. Does the controller see the right thing?
+  #    PV output against surplus. Surplus should cross zero as house
+  #    load rises and falls, independently of production.
+  - type: grid
+    cards:
+      - type: heading
+        heading: 1 - What the controller sees
+      - type: history-graph
+        hours_to_show: 12
+        entities:
+          - entity: sensor.pv_production_total
+            name: PV output
+          - entity: sensor.solar_surplus_smoothed
+            name: Surplus (smoothed)
+          - entity: sensor.solar_surplus_raw
+            name: Surplus (raw)
+
+  # 2. Does it decide correctly, and does the car obey?
+  #    The three lines should form a staircase following each other.
+  #    Target leads, applied follows within the dead band and pacing,
+  #    wallbox power follows applied.
+  - type: grid
+    cards:
+      - type: heading
+        heading: 2 - Decision and execution
+      - type: history-graph
+        hours_to_show: 12
+        entities:
+          - entity: sensor.tesla_target_amps
+            name: Target amps
+          - entity: number.model_y_charge_current
+            name: Applied amps
+          - entity: switch.model_y_charge
+            name: Charging
+      - type: history-graph
+        hours_to_show: 12
+        entities:
+          - entity: sensor.borne_ve_2_1min
+            name: Wallbox power
+
+  # 3. Why did it decide that?
+  #    Sky index and volatility explain the margin. The rolling max/min
+  #    explain every stop and resume.
+  - type: grid
+    cards:
+      - type: heading
+        heading: 3 - Why
+      - type: history-graph
+        hours_to_show: 12
+        entities:
+          - entity: sensor.clear_sky_index
+            name: Clear sky index
+          - entity: sensor.sky_volatility
+            name: Sky volatility
+      - type: history-graph
+        hours_to_show: 12
+        entities:
+          - entity: sensor.tesla_target_amps_max_10min
+            name: Max over 10 min (drives the stop)
+          - entity: sensor.tesla_target_amps_min_5min
+            name: Min over 5 min (drives the resume)
+
+  # 4. What blocked it?
+  #    Every condition that can silently stop an automation, on one
+  #    timeline. A gap here explains a day with no commands.
+  - type: grid
+    cards:
+      - type: heading
+        heading: 4 - Gating conditions
+      - type: history-graph
+        hours_to_show: 24
+        entities:
+          - entity: binary_sensor.model_y_charge_cable
+            name: Cable
+          - entity: binary_sensor.solar_window
+            name: Solar window
+          - entity: binary_sensor.measurements_reliable
+            name: Measurements reliable
+          - entity: binary_sensor.off_peak_window
+            name: Off-peak window
+          - entity: input_boolean.tesla_solar_charging
+            name: Solar charging enabled
+      - type: history-graph
+        hours_to_show: 24
+        entities:
+          - entity: sensor.model_y_battery_level
+            name: State of charge
+
+  # 5. What did it cost, what did it return?
+  #    Note the command counter before midnight - it resets at sunrise.
+  - type: grid
+    cards:
+      - type: heading
+        heading: 5 - Cost and yield
+      - type: entities
+        entities:
+          - entity: counter.tesla_fleet_commands
+            name: Commands sent today
+          - entity: sensor.tesla_command_budget_left
+            name: Budget left
+          - entity: sensor.borne_ve_2_1d
+            name: Wallbox energy today
+          - entity: sensor.solar_panels_1_1d
+            name: PV array 1 today
+          - entity: sensor.solar_panels_se_8_1d
+            name: PV array 2 today
