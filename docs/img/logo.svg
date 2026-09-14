@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Tesla solar surplus charging">
+  <title>Tesla solar surplus charging</title>
+
+  <!-- Sun: the resource being tracked -->
+  <g stroke="#E8963C" stroke-width="14" stroke-linecap="round" fill="none">
+    <line x1="256" y1="36"  x2="256" y2="66"/>
+    <line x1="349" y1="61"  x2="334" y2="87"/>
+    <line x1="417" y1="129" x2="391" y2="144"/>
+    <line x1="163" y1="61"  x2="178" y2="87"/>
+    <line x1="95"  y1="129" x2="121" y2="144"/>
+  </g>
+  <circle cx="256" cy="168" r="62" fill="#E8963C"/>
+
+  <!-- Charge bolt: the load being steered -->
+  <path d="M266 126 L226 176 L252 176 L246 214 L286 162 L260 162 Z"
+        fill="#FDF6EC"/>
+
+  <!-- Production curve: what the sky offers -->
+  <path d="M62 408 C 132 408, 154 268, 256 268 C 358 268, 380 408, 450 408"
+        fill="none" stroke="#E8963C" stroke-width="9"
+        stroke-linecap="round" opacity="0.42"/>
+
+  <!-- Control staircase: discrete amperage steps tracking that curve.
+       Deliberately asymmetric - quick to step down, patient on the way up. -->
+  <polyline points="62,408 128,408 128,360 172,360 172,312 216,312 216,282
+                    300,282 300,312 330,312 330,360 360,360 360,408 450,408"
+            fill="none" stroke="#2F6FD0" stroke-width="16"
+            stroke-linejoin="round" stroke-linecap="round"/>
+
+  <!-- Floor: the 5 A minimum, below which it is hold or stop -->
+  <line x1="62" y1="440" x2="450" y2="440"
+        stroke="#2F6FD0" stroke-width="7" stroke-linecap="round"
+        stroke-dasharray="2 26" opacity="0.65"/>
+</svg>

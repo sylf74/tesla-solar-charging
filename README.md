@@ -1,3 +1,5 @@
+<img src="docs/img/logo.svg" width="120" align="right" alt="">
+
 # Tesla solar surplus charging for Home Assistant
 
 A Home Assistant package that charges a Tesla from photovoltaic surplus during
