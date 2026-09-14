@@ -77,6 +77,28 @@ The legitimate place for a forecast to decide something is planning, not
 control: raising the SOC target today because the next three days look grey.
 That would be a separate mechanism, operating on a different timescale.
 
+### The 5 A floor, and what it costs to respect it
+
+A Tesla cannot charge below 5 A. Under that threshold there is no reduced
+setting to fall back on — it is hold at 5 A or stop.
+
+Stopping looks like the conservative choice. It is not. With 900 W of surplus
+and a 5 A floor needing roughly 1150 W, stopping wastes the entire 900 W. On a
+site with no export payment that production is simply lost, to avoid 250 W of
+import. That is a bad trade at almost any tariff.
+
+`Accepted grid draw at the floor` sets how many watts of import you are willing
+to take to keep charging instead. The controller holds 5 A whenever
+`5 A x voltage - surplus` falls within that allowance, and stops otherwise. Set
+it to 0 to restore stop-always behaviour.
+
+The safety margin is deliberately not applied to this decision. The margin
+guards against fluctuation you did not choose; the allowance is a draw you
+explicitly agreed to. Mixing them would make the setting mean nothing precise.
+
+`Grid draw to hold floor`, on the card, shows what holding the floor would cost
+right now. Negative means the surplus already covers it.
+
 ### Guard rails
 
 **Measurement sanity.** Control freezes entirely if any meter goes unavailable,

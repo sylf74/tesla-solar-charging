@@ -41,6 +41,10 @@ cards:
         entity: sensor.tesla_target_amps
         attribute: applied_margin
         name: Applied margin
+      - type: attribute
+        entity: sensor.tesla_target_amps
+        attribute: grid_draw_at_floor
+        name: Grid draw to hold floor
       - entity: number.model_y_charge_current
         name: Applied amps
       - entity: sensor.borne_ve_2_1min
@@ -68,6 +72,7 @@ cards:
     title: Settings
     entities:
       - entity: input_number.tesla_base_margin
+      - entity: input_number.tesla_grid_allowance
       - entity: input_number.tesla_solar_soc_target
       - entity: input_number.tesla_night_soc_target
       - entity: input_number.tesla_night_amps

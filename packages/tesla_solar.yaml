@@ -112,6 +112,18 @@ input_number:
     unit_of_measurement: "%"
     icon: mdi:battery-charging-80
 
+  # Grid you accept importing to hold the 5 A floor instead of stopping.
+  # Without export payment, curtailing 900 W of production to avoid
+  # 250 W of import is a losing trade. 0 restores the old behaviour.
+  tesla_grid_allowance:
+    name: Accepted grid draw at the floor (W)
+    min: 0
+    max: 1500
+    step: 50
+    initial: 0
+    unit_of_measurement: W
+    icon: mdi:transmission-tower-import
+
   tesla_command_budget:
     name: Fleet API command budget per day
     min: 20
@@ -382,12 +394,33 @@ template:
               from the last session and would read 16.
               In solar mode this ceiling is never reached anyway:
               6.1 kWp minus house load tops out around 24 A. -#}
-          {{ [[a, 32] | min, 0] | max }}
+          {% if a >= 5 %}
+            {{ [a, 32] | min }}
+          {% else %}
+            {#- Below the 5 A floor there is no reduced setting to fall
+                back on: it is hold-at-5-A or stop. Holding costs
+                (5 A x U - surplus) watts of import. Stopping wastes the
+                whole surplus, which with no export payment is a pure
+                loss. The allowance is how much import you accept to
+                avoid that. The safety margin is deliberately not applied
+                here - it guards against fluctuation, whereas the
+                allowance is a draw you have explicitly agreed to. -#}
+            {% set gap = (5 * u) - surplus %}
+            {% set allowance = states('input_number.tesla_grid_allowance') | float(0) %}
+            {{ 5 if gap <= allowance else 0 }}
+          {% endif %}
         attributes:
           applied_margin: >
             {% set vol  = states('sensor.sky_volatility') | float(0) %}
             {% set base = states('input_number.tesla_base_margin') | float(200) %}
             {{ base + (0 if vol < 0.05 else (250 if vol < 0.15 else 600)) }}
+          grid_draw_at_floor: >
+            {#- Watts that would be imported if the floor were held right
+                now. Negative means the surplus already covers it. -#}
+            {% set surplus = states('sensor.solar_surplus_smoothed') | float(0) %}
+            {% set u = states('sensor.myups_input_voltage') | float(230) %}
+            {% set u = u if 200 < u < 260 else 230 %}
+            {{ ((5 * u) - surplus) | round(0) }}
 
       # -- 2.7 Remaining command budget --------------------------------
       - name: "Tesla command budget left"
