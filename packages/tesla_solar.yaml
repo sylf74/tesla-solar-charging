@@ -496,11 +496,19 @@ automation:
         entity_id: binary_sensor.model_y_charge_cable
         state: "on"
       - condition: numeric_state
-        entity_id: sensor.tesla_target_amps
-        above: 4
-      - condition: numeric_state
         entity_id: sensor.tesla_command_budget_left
         above: 0
+      - condition: template
+        alias: "Something to do between the 5 A floor and the target"
+        value_template: >
+          {#- The controller drives towards max(target, 5 A). It must stay
+              active when the target is 0, otherwise it cannot walk a
+              manually-raised amperage back down and the car keeps pulling
+              from the grid. Going below 5 A is the stop automation's job,
+              not this one's. -#}
+          {% set target  = states('sensor.tesla_target_amps') | float(0) %}
+          {% set current = states('number.model_y_charge_current') | float(0) %}
+          {{ target >= 5 or current > 5 }}
       - condition: template
         alias: "SOC below target"
         value_template: >
@@ -509,7 +517,8 @@ automation:
       - condition: template
         alias: "Asymmetric dead band and pacing"
         value_template: >
-          {% set target   = states('sensor.tesla_target_amps') | float(0) %}
+          {% set raw      = states('sensor.tesla_target_amps') | float(0) %}
+          {% set target   = [raw, 5] | max %}
           {% set current  = states('number.model_y_charge_current') | float(0) %}
           {% set delta    = target - current %}
           {% set interval = states('sensor.tesla_min_interval') | float(120) %}
@@ -532,7 +541,8 @@ automation:
         target:
           entity_id: number.model_y_charge_current
         data:
-          value: "{{ states('sensor.tesla_target_amps') | int }}"
+          value: >
+            {{ [ states('sensor.tesla_target_amps') | int(0), 5 ] | max }}
       - service: counter.increment
         target:
           entity_id: counter.tesla_fleet_commands
@@ -583,11 +593,13 @@ automation:
         alias: "Target has stayed below 5 A for the whole window"
         entity_id: sensor.tesla_target_amps_max_10min
         below: 5
-      - condition: template
-        alias: "Unless Solcast expects sun back within the hour"
-        value_template: >
-          {{ states('sensor.solcast_pv_forecast_forecast_next_hour')
-             | float(0) < 1.5 }}
+      # No Solcast veto here. It used to block the stop whenever the
+      # forecast promised sun within the hour - which on any sunny
+      # afternoon is always true, so the stop was permanently disabled
+      # exactly when it was needed. It also measured the wrong thing:
+      # forecast production, when the reason for a vanished surplus is
+      # usually house load. The 10-minute window above is what absorbs
+      # a passing cloud.
     action:
       - service: switch.turn_off
         target:
