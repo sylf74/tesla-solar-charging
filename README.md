@@ -136,6 +136,18 @@ a 250 W margin is applied on top of the base margin.
 `Min interval between commands` is derived, not configured: the remaining API
 budget spread over the remaining daylight.
 
+### Installing the cards
+
+The two dashboard files are not deployed by anything — they are pasted by hand.
+
+`dashboard/tesla_solar_card.yaml` is a **card**. In a dashboard, edit mode, add
+a card, scroll to Manual, and paste the file.
+
+`dashboard/tesla_solar_diagnostics.yaml` is a whole **view** — a tab, not a
+card. Click the `+` in the tab bar, choose the **Sections** layout, then open
+the menu at the top right of the dialog, switch to YAML editing, and paste. You
+get a new "Charging diagnostics" tab alongside the control card.
+
 A second file, `dashboard/tesla_solar_diagnostics.yaml`, is a full diagnostic
 view for analysing a day after the fact. It is built in reading order: what the
 controller saw, what it decided and whether the car obeyed, why it decided that,
