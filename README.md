@@ -157,6 +157,14 @@ only makes sense once the previous one has answered yes.
 Section 4 is the one that earns its place on a day when nothing happened: every
 condition that can silently stop an automation, on one timeline.
 
+![Diagnostic view](docs/img/dashboard-diagnostics.png)
+
+The day above reads left to right. Production peaked near 4.7 kW, yet the
+smoothed surplus stayed negative almost throughout — house load simply exceeded
+production. The car was plugged in late afternoon, and the amperage trace shows
+the controller walking it down from 16 A to 10 A to the 5 A floor as it found no
+surplus to work with. Three commands for the whole day.
+
 The history graph is the real tuning instrument. If the wallbox trace follows
 the surplus with acceptable lag and no sawtooth, the controller is well tuned.
 
