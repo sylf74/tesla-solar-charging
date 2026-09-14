@@ -17,6 +17,18 @@ cards:
 
       - type: divider
 
+      # Vehicle state. These three explain most cases of "nothing is
+      # happening": an unplugged cable or a SOC already above target
+      # both stop every automation at its first condition, silently.
+      - entity: binary_sensor.model_y_charge_cable
+        name: Cable connected
+      - entity: sensor.model_y_battery_level
+        name: State of charge
+      - entity: switch.model_y_charge
+        name: Charging
+
+      - type: divider
+
       # The three lines that matter most, in order:
       #   1. smoothed surplus  -> what the controller sees
       #   2. target vs applied -> is the controller acting?

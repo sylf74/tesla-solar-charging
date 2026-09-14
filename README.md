@@ -185,6 +185,29 @@ Start with `tesla_base_margin` at 400 W and reduce later.
 | Budget barely used | lower the up threshold to 1 A for finer tracking |
 | Persistent gap between commanded and actual | the wallbox is current-limited; check the Pilot signal rating |
 
+## Nothing is happening
+
+Automations using a `time_pattern` trigger run continuously but only update
+their "last triggered" timestamp when the actions actually execute. A list of
+automations all showing `Never` therefore means a condition is failing, not
+that nothing is running.
+
+In order of likelihood:
+
+1. **Cable unplugged.** Every solar and night automation checks it first.
+2. **SOC already above target.** Raise the target, or wait until the car is
+   used.
+3. **Both `input_boolean` helpers still off.** They default to off by design.
+4. **No surplus.** Target amps at 0 with a negative smoothed surplus is correct
+   behaviour, not a fault.
+5. **Virtual key not paired.** Sensors read fine, commands fail. The command
+   counter would be above zero with errors in the log.
+
+`Sky volatility` reading `unknown` is expected overnight: the statistics
+platform only records a sample when its source changes state, and the clear-sky
+index is pinned at 1 in the dark. The margin calculation defaults it to 0, so
+only the base margin applies. It fills in again after sunrise.
+
 ## Known limitations
 
 The command counter is self-imposed, not read from Tesla. Check actual usage on
