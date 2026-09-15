@@ -153,8 +153,8 @@ condition that can silently stop an automation, on one timeline.
 
 ![Diagnostic view](docs/img/dashboard-diagnostics.png)
 
-The day above reads left to right. Production peaked near 4.7 kW, yet the
-smoothed surplus stayed negative almost throughout — house load simply exceeded
+The day above reads left to right. Production peaked in the afternoon, yet the smoothed
+surplus stayed negative almost throughout — house load simply exceeded
 production. The car was plugged in late afternoon, and the amperage trace shows
 the controller walking it down from 16 A to 10 A to the 5 A floor as it found no
 surplus to work with. Three commands for the whole day.
@@ -214,8 +214,8 @@ fields and inside Jinja strings, so adaptation is a plain find-and-replace.
 |---|---|---|---|
 | Net grid power | `sensor.vue_totalusage_1min` | required | positive = import |
 | Wallbox power | `sensor.borne_ve_2_1min` | required | |
-| PV array 1 | `sensor.solar_panels_1_1min` | required | SW, 2800 Wp |
-| PV array 2 | `sensor.solar_panels_se_8_1min` | optional | SE, 3300 Wp |
+| PV array 1 | `sensor.solar_panels_1_1min` | required | |
+| PV array 2 | `sensor.solar_panels_se_8_1min` | optional | |
 | Mains voltage | `sensor.myups_input_voltage` | optional | falls back to 230 V |
 | Charging amps | `number.model_y_charge_current` | required | |
 | Charge switch | `switch.model_y_charge` | required | |
@@ -229,8 +229,8 @@ absent meter is distinguished from one genuinely reading zero. That matters:
 with a plain default, a single-array site would silently halve its own total
 and the zero-output guard would never fire.
 
-Two site constants are hardcoded in the string imbalance sensor: the peak watts
-of each array. The wallbox ceiling (32 A) is hardcoded in the target amps
+The string imbalance sensor divides each array by its own peak watts to
+normalise them. Replace those two constants with yours. The wallbox ceiling (32 A) is hardcoded in the target amps
 sensor — do **not** replace it with the entity's `max` attribute, which is only
 a leftover from the last session while the cable is unplugged.
 

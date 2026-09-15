@@ -21,7 +21,7 @@
 #    sensor.vue_totalusage_1min      Net grid power, POSITIVE = import
 #                                    (Emporia mains clamps)
 #    sensor.borne_ve_2_1min          Wallbox circuit power (W)
-#    sensor.solar_panels_1_1min      PV array 1 power - here SW, 2800 Wp
+#    sensor.solar_panels_1_1min      PV array 1 power
 #                                    A single-array site points this at
 #                                    its only meter or inverter total.
 #
@@ -32,7 +32,7 @@
 #
 #  OPTIONAL - set to the literal word  none  if absent
 #
-#    sensor.solar_panels_se_8_1min   PV array 2 power - here SE, 3300 Wp
+#    sensor.solar_panels_se_8_1min   PV array 2 power
 #                                    Absent: total PV falls back to
 #                                    array 1 alone and the imbalance
 #                                    sensor turns unavailable rather
@@ -50,8 +50,8 @@
 #                                    and only the base margin applies.
 #                                    Control still works.
 #
-#  Two site constants are hardcoded in "PV string imbalance": the peak
-#  watts of each array, 3300 and 2800 here.
+#  The "PV string imbalance" sensor divides each array by its own peak
+#  watts to normalise them. Replace those two constants with yours.
 #
 #  DEGRADATION MATRIX
 #
@@ -362,9 +362,11 @@ template:
           {{ has_value('sensor.solar_panels_1_1min')
              and has_value('sensor.solar_panels_se_8_1min') }}
         state: >
-          {% set se = states('sensor.solar_panels_se_8_1min') | float(0) / 3300 %}
-          {% set sw = states('sensor.solar_panels_1_1min')    | float(0) / 2800 %}
-          {{ (se - sw) | round(3) }}
+          {#- Divide each array by its own peak watts. Replace these two
+              constants with yours. -#}
+          {% set a2 = states('sensor.solar_panels_se_8_1min') | float(0) / 3300 %}
+          {% set a1 = states('sensor.solar_panels_1_1min')    | float(0) / 2800 %}
+          {{ (a2 - a1) | round(3) }}
 
       # -- 2.6 Target amperage -----------------------------------------
       # Dynamic margin: the more unstable the sky, the more headroom is
@@ -392,8 +394,8 @@ template:
           {#- Wallbox limit: 32 A. Do NOT read the entity's max
               attribute - with the cable unplugged it is only a leftover
               from the last session and would read 16.
-              In solar mode this ceiling is never reached anyway:
-              6.1 kWp minus house load tops out around 24 A. -#}
+              In solar mode this ceiling is rarely reached anyway: peak
+              production minus house load usually tops out well below it. -#}
           {% if a >= 5 %}
             {{ [a, 32] | min }}
           {% else %}
