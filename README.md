@@ -212,7 +212,7 @@ fields and inside Jinja strings, so adaptation is a plain find-and-replace.
 
 | Purpose | Default entity | | Notes |
 |---|---|---|---|
-| Net grid power | `sensor.vue_totalusage_1min` | required | positive = import |
+| Net grid power | `sensor.vue_123_1min` | required | positive = import |
 | Wallbox power | `sensor.borne_ve_2_1min` | required | |
 | PV array 1 | `sensor.solar_panels_1_1min` | required | |
 | PV array 2 | `sensor.solar_panels_se_8_1min` | optional | |

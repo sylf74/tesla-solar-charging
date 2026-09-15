@@ -18,8 +18,12 @@
 #
 #  REQUIRED - the package does not work without these
 #
-#    sensor.vue_totalusage_1min      Net grid power, POSITIVE = import
-#                                    (Emporia mains clamps)
+#    sensor.vue_123_1min             Net grid power, POSITIVE = import.
+#                                    On Emporia this is the mains channel,
+#                                    NOT the "Total Usage" entity - that one
+#                                    is gross house consumption and is always
+#                                    positive, which silently depresses the
+#                                    surplus by the whole house load.
 #    sensor.borne_ve_2_1min          Wallbox circuit power (W)
 #    sensor.solar_panels_1_1min      PV array 1 power
 #                                    A single-array site points this at
@@ -200,7 +204,7 @@ template:
         state: >
           {% set ns = namespace(ok = true) %}
           {#- Required meters: absence or staleness freezes control. -#}
-          {% for c in ['sensor.vue_totalusage_1min',
+          {% for c in ['sensor.vue_123_1min',
                        'sensor.borne_ve_2_1min',
                        'sensor.solar_panels_1_1min'] %}
             {% if states[c] is none or not has_value(c) %}
@@ -239,12 +243,12 @@ template:
           {{ ns.ok }}
         attributes:
           cause: >
-            {% if not has_value('sensor.vue_totalusage_1min') %}
+            {% if not has_value('sensor.vue_123_1min') %}
               Grid meter unavailable
             {% elif not has_value('sensor.borne_ve_2_1min') %}
               Wallbox meter unavailable
-            {% elif states['sensor.vue_totalusage_1min'] is not none
-                 and (now() - states['sensor.vue_totalusage_1min'].last_reported).total_seconds() > 300 %}
+            {% elif states['sensor.vue_123_1min'] is not none
+                 and (now() - states['sensor.vue_123_1min'].last_reported).total_seconds() > 300 %}
               Readings frozen for over 5 minutes
             {% elif is_state('binary_sensor.solar_window', 'on')
                  and states('sensor.pv_production_total') | float(-1) < 10 %}
@@ -275,7 +279,7 @@ template:
   - sensor:
 
       # -- 2.1 Available surplus ---------------------------------------
-      # Convention: sensor.vue_totalusage_1min POSITIVE = grid import.
+      # Convention: sensor.vue_123_1min POSITIVE = grid import.
       # If your clamps are mounted the other way round, negate "grid".
       #
       # The car's current draw is added back in: what the car is
@@ -288,7 +292,7 @@ template:
         device_class: power
         state_class: measurement
         state: >
-          {% set grid = states('sensor.vue_totalusage_1min') | float(0) %}
+          {% set grid = states('sensor.vue_123_1min') | float(0) %}
           {% set car  = states('sensor.borne_ve_2_1min') | float(0) %}
           {{ (car - grid) | round(0) }}
           {#- Fallback if no net-grid entity exists on your setup.
@@ -296,7 +300,7 @@ template:
               of one, so three times as many chances to drift:
               surplus = pv_total + wallbox - total_usage -#}
         availability: >
-          {{ has_value('sensor.vue_totalusage_1min')
+          {{ has_value('sensor.vue_123_1min')
              and has_value('sensor.borne_ve_2_1min') }}
 
       # -- 2.2 Total PV output -----------------------------------------
