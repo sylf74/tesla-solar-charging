@@ -1,7 +1,12 @@
 # Dashboard card for the tesla_solar package.
 # Paste into a Lovelace view using "Edit in YAML".
 
-type: vertical-stack
+# Two columns: live control on the left, settings and tracking on the
+# right. Change columns to 1 if you paste this into a narrow sidebar
+# or want the old single-column stack back.
+type: grid
+columns: 2
+square: false
 cards:
   - type: entities
     title: Tesla charging control
@@ -68,25 +73,27 @@ cards:
       - entity: counter.tesla_fleet_commands
         name: Commands sent today
 
-  - type: entities
-    title: Settings
-    entities:
-      - entity: input_number.tesla_base_margin
-      - entity: input_number.tesla_grid_allowance
-      - entity: input_number.tesla_solar_soc_target
-      - entity: input_number.tesla_night_soc_target
-      - entity: input_number.tesla_night_amps
-      - entity: input_datetime.tesla_off_peak_start
-      - entity: input_datetime.tesla_off_peak_end
-      - entity: input_number.tesla_command_budget
+  - type: vertical-stack
+    cards:
+      - type: entities
+        title: Settings
+        entities:
+          - entity: input_number.tesla_base_margin
+          - entity: input_number.tesla_grid_allowance
+          - entity: input_number.tesla_solar_soc_target
+          - entity: input_number.tesla_night_soc_target
+          - entity: input_number.tesla_night_amps
+          - entity: input_datetime.tesla_off_peak_start
+          - entity: input_datetime.tesla_off_peak_end
+          - entity: input_number.tesla_command_budget
 
-  - type: history-graph
-    hours_to_show: 12
-    title: Control tracking
-    entities:
-      - entity: sensor.pv_production_total
-        name: PV output
-      - entity: sensor.solar_surplus_smoothed
-        name: Surplus
-      - entity: sensor.borne_ve_2_1min
-        name: Wallbox
+      - type: history-graph
+        hours_to_show: 12
+        title: Control tracking
+        entities:
+          - entity: sensor.pv_production_total
+            name: PV output
+          - entity: sensor.solar_surplus_smoothed
+            name: Surplus
+          - entity: sensor.borne_ve_2_1min
+            name: Wallbox

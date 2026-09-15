@@ -68,12 +68,6 @@ amperage because of what the weather is predicted to do. If the Solcast
 integration fails, the index pins to 1, the dynamic margin disappears, and
 control carries on using the base margin alone.
 
-This is deliberate, and it was not always the case. An earlier version vetoed
-the stop automation whenever the forecast promised sun within the hour. On a
-sunny afternoon that condition is permanently true, so the stop was disabled
-exactly when it was needed — and it measured the wrong quantity anyway, since a
-surplus usually vanishes because house load rose, not because production fell.
-A forecast describes the sky. It cannot see your dishwasher.
 
 The legitimate place for a forecast to decide something is planning, not
 control: raising the SOC target today because the next three days look grey.
