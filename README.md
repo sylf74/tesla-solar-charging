@@ -153,11 +153,18 @@ condition that can silently stop an automation, on one timeline.
 
 ![Diagnostic view](docs/img/dashboard-diagnostics.png)
 
-The day above reads left to right. Production peaked in the afternoon, yet the smoothed
-surplus stayed negative almost throughout — house load simply exceeded
-production. The car was plugged in late afternoon, and the amperage trace shows
-the controller walking it down from 16 A to 10 A to the 5 A floor as it found no
-surplus to work with. Three commands for the whole day.
+The day above reads left to right. The car was plugged in early afternoon and
+the controller took it straight to 16 A while the surplus was ample. From then
+on the amperage trace is a descending staircase: production falls through the
+afternoon, the target follows, and the applied amperage steps down behind it to
+the 5 A floor. Target and applied stay within the dead band of each other the
+whole way down — which is what a well-tuned loop looks like.
+
+Section 3 explains the pacing: a clear-sky index around 0.8 and volatility at
+0.02 mean stable conditions, so only the base margin applied and the controller
+could track closely rather than keeping headroom in reserve.
+
+24 commands delivered 10.3 kWh.
 
 The history graph is the real tuning instrument. If the wallbox trace follows
 the surplus with acceptable lag and no sawtooth, the controller is well tuned.
