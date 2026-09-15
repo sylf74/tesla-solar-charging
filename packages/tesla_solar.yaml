@@ -549,10 +549,16 @@ automation:
           {% set current = states('number.model_y_charge_current') | float(0) %}
           {{ target >= 5 or current > 5 }}
       - condition: template
-        alias: "SOC below target"
+        alias: "SOC below target, or amperage still to wind down"
         value_template: >
-          {{ states('sensor.model_y_battery_level') | float(100)
-             < states('input_number.tesla_solar_soc_target') | float(80) }}
+          {#- Above the target the controller must still be able to
+              reduce. Gating it on SOC alone froze the applied amperage
+              wherever it happened to be, and the stop automation could
+              not help since it only watches the target. -#}
+          {% set soc = states('sensor.model_y_battery_level') | float(100) %}
+          {% set target = states('input_number.tesla_solar_soc_target') | float(80) %}
+          {% set current = states('number.model_y_charge_current') | float(0) %}
+          {{ soc < target or current > 5 }}
       - condition: template
         alias: "Asymmetric dead band and pacing"
         value_template: >
@@ -690,6 +696,43 @@ automation:
           entity_id: counter.tesla_fleet_commands
       - delay: "00:00:05"
       - service: switch.turn_on
+        target:
+          entity_id: switch.model_y_charge
+      - service: counter.increment
+        target:
+          entity_id: counter.tesla_fleet_commands
+
+  # -- 4.3b Solar SOC target reached ---------------------------------
+  # The night path had this from the start; the solar path did not.
+  # Without it, reaching the target froze the charge at whatever
+  # amperage was applied and nothing ever turned it off.
+  - id: tesla_solar_target_reached
+    alias: "Tesla - solar SOC target reached"
+    mode: single
+    trigger:
+      - platform: template
+        value_template: >
+          {{ states('sensor.model_y_battery_level') | float(0)
+             >= states('input_number.tesla_solar_soc_target') | float(90) }}
+      - platform: time_pattern
+        minutes: "/5"
+    condition:
+      - condition: state
+        entity_id: input_boolean.tesla_solar_charging
+        state: "on"
+      - condition: state
+        alias: "Leave off-peak charging alone"
+        entity_id: binary_sensor.off_peak_window
+        state: "off"
+      - condition: state
+        entity_id: switch.model_y_charge
+        state: "on"
+      - condition: template
+        value_template: >
+          {{ states('sensor.model_y_battery_level') | float(0)
+             >= states('input_number.tesla_solar_soc_target') | float(90) }}
+    action:
+      - service: switch.turn_off
         target:
           entity_id: switch.model_y_charge
       - service: counter.increment
