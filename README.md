@@ -95,6 +95,27 @@ explicitly agreed to. Mixing them would make the setting mean nothing precise.
 `Grid draw to hold floor`, on the card, shows what holding the floor would cost
 right now. Negative means the surplus already covers it.
 
+### Stopping and resuming
+
+Both decisions are state-based rather than edge-based, so they survive a restart
+and cannot be missed because a threshold was already crossed when the package
+loaded. Each reads a rolling statistic of the target:
+
+| Decision | Reads | Condition |
+|---|---|---|
+| Stop | rolling **max** over 10 min | below 5 A |
+| Resume | rolling **mean** over 5 min | above 6 A |
+
+The asymmetry is deliberate twice over. The 5/6 A gap is the hysteresis that
+prevents cycling. And max against mean reflects what each decision should be
+sure of: stopping requires that the target never once recovered, while resuming
+only requires that it averaged well.
+
+Using a rolling *minimum* for the resume, which is the intuitive mirror of the
+max, does not work. Under broken cloud the target dips to zero every few
+minutes, so the condition is almost never satisfied even while the target spends
+its time between 9 and 17 A. The charge stops and never restarts.
+
 ### Guard rails
 
 **Measurement sanity.** Control freezes entirely if any meter goes unavailable,
@@ -124,11 +145,12 @@ Live control on the left, settings on the right. In the state shown, the car has
 reached 100% and charging has stopped, so the target sits at zero while the
 surplus is slightly negative.
 
-Two derived values are worth watching. `Applied margin` reads 650 — a 400 W base
-plus 250 W because sky volatility crossed the first threshold. And `Grid draw to
-hold floor` shows what holding the 5 A floor would cost right now; compare it
-against the accepted allowance to understand why the charge stopped rather than
-held.
+Two derived values are worth watching. `Applied margin` is the base margin plus
+a band added when sky volatility crosses a threshold — the screenshot predates
+the current bands, so the figure shown is higher than it would be today. And
+`Grid draw to hold floor` shows what holding the 5 A floor would cost right now;
+compare it against the accepted allowance to understand why a charge stopped
+rather than held.
 
 ### Installing the cards
 
