@@ -383,7 +383,7 @@ template:
           {% set surplus = states('sensor.solar_surplus_smoothed') | float(0) %}
           {% set vol     = states('sensor.sky_volatility') | float(0) %}
           {% set base    = states('input_number.tesla_base_margin') | float(200) %}
-          {% set margin  = base + (0 if vol < 0.05 else (250 if vol < 0.15 else 600)) %}
+          {% set margin  = base + (0 if vol < 0.05 else (150 if vol < 0.15 else 350)) %}
           {#- Measured voltage rather than a nominal 230 V. Read
               opportunistically: any missing or implausible value falls
               back to 230, so control is never blocked by the absence
@@ -419,7 +419,7 @@ template:
           applied_margin: >
             {% set vol  = states('sensor.sky_volatility') | float(0) %}
             {% set base = states('input_number.tesla_base_margin') | float(200) %}
-            {{ base + (0 if vol < 0.05 else (250 if vol < 0.15 else 600)) }}
+            {{ base + (0 if vol < 0.05 else (150 if vol < 0.15 else 350)) }}
           grid_draw_at_floor: >
             {#- Watts that would be imported if the floor were held right
                 now. Negative means the surplus already covers it. -#}
@@ -486,11 +486,16 @@ sensor:
       minutes: 10
     sampling_size: 300
 
+  # Mean, not minimum. A strict minimum is unusable on a signal this
+  # noisy: under broken cloud the target dips to 0 every few minutes,
+  # so a minimum-based resume never fires even while the target spends
+  # its time between 9 and 17 A. The stop still uses a rolling max, so
+  # the hysteresis holds.
   - platform: statistics
-    name: "Tesla target amps min 5min"
-    unique_id: tesla_target_amps_min_5min
+    name: "Tesla target amps mean 5min"
+    unique_id: tesla_target_amps_mean_5min
     entity_id: sensor.tesla_target_amps
-    state_characteristic: value_min
+    state_characteristic: mean
     max_age:
       minutes: 5
     sampling_size: 300
@@ -682,8 +687,8 @@ automation:
           {{ states('sensor.model_y_battery_level') | float(100)
              < states('input_number.tesla_solar_soc_target') | float(80) }}
       - condition: numeric_state
-        alias: "Target has stayed above 6 A for the whole window"
-        entity_id: sensor.tesla_target_amps_min_5min
+        alias: "Target has averaged above 6 A over the window"
+        entity_id: sensor.tesla_target_amps_mean_5min
         above: 6
     action:
       - service: number.set_value

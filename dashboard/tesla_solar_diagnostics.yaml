@@ -68,8 +68,8 @@ sections:
         entities:
           - entity: sensor.tesla_target_amps_max_10min
             name: Max over 10 min (drives the stop)
-          - entity: sensor.tesla_target_amps_min_5min
-            name: Min over 5 min (drives the resume)
+          - entity: sensor.tesla_target_amps_mean_5min
+            name: Mean over 5 min (drives the resume)
 
   # 4. What blocked it?
   #    Every condition that can silently stop an automation, on one
