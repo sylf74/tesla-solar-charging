@@ -118,17 +118,17 @@ The card in `dashboard/tesla_solar_card.yaml` is organised around the three
 gaps that matter, in reading order: what the controller sees, what it commands,
 and what the car actually does.
 
-| Control | Settings and tracking |
-|---|---|
-| ![Control card](docs/img/dashboard-control.png) | ![Settings card](docs/img/dashboard-settings.png) |
+![Control card](docs/img/dashboard-control.png)
 
-`Smoothed surplus` negative means the house is importing — target amps
-correctly falls to zero. `Clear sky index` around 0.43 indicates hazy
-conditions, and `Sky volatility` at 0.06 is just above the first threshold, so
-a 250 W margin is applied on top of the base margin.
+Live control on the left, settings on the right. In the state shown, the car has
+reached 100% and charging has stopped, so the target sits at zero while the
+surplus is slightly negative.
 
-`Min interval between commands` is derived, not configured: the remaining API
-budget spread over the remaining daylight.
+Two derived values are worth watching. `Applied margin` reads 650 — a 400 W base
+plus 250 W because sky volatility crossed the first threshold. And `Grid draw to
+hold floor` shows what holding the 5 A floor would cost right now; compare it
+against the accepted allowance to understand why the charge stopped rather than
+held.
 
 ### Installing the cards
 
@@ -160,9 +160,9 @@ afternoon, the target follows, and the applied amperage steps down behind it to
 the 5 A floor. Target and applied stay within the dead band of each other the
 whole way down — which is what a well-tuned loop looks like.
 
-Section 3 explains the pacing: a clear-sky index around 0.8 and volatility at
-0.02 mean stable conditions, so only the base margin applied and the controller
-could track closely rather than keeping headroom in reserve.
+Section 3 explains the pacing. The clear-sky index sits near 1.0 through the
+afternoon — clear conditions — while the morning shows the scatter of broken
+cloud. Volatility settles at 0.07, just enough to add a second margin band.
 
 24 commands delivered 10.3 kWh.
 
