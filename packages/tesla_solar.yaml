@@ -257,6 +257,25 @@ template:
               OK
             {% endif %}
 
+      # -- Tesla API unreachable ---------------------------------------
+      # Disabling the Tesla Fleet integration removes its entities, which
+      # makes every automation fail its first condition silently. This
+      # surfaces that state instead.
+      #
+      # device_class: problem turns the icon red on its own when active,
+      # so no template colouring is needed on the card.
+      #
+      # delay_on rides out restarts and reloads, when the entities are
+      # briefly absent without anything being wrong.
+      - name: "Tesla API unreachable"
+        unique_id: tesla_api_unreachable
+        device_class: problem
+        delay_on: "00:05:00"
+        state: >
+          {{ not (has_value('sensor.model_y_battery_level')
+                  and has_value('number.model_y_charge_current')
+                  and has_value('switch.model_y_charge')) }}
+
       # -- Off-peak window ---------------------------------------------
       # Handles windows that cross midnight (e.g. 22:00 -> 06:00).
       - name: "Off peak window"

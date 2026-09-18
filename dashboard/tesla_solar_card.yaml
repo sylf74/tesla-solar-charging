@@ -13,6 +13,10 @@ cards:
     entities:
       - entity: input_boolean.tesla_solar_charging
       - entity: input_boolean.tesla_night_charging
+      - entity: binary_sensor.tesla_api_unreachable
+        name: Tesla API
+        state_color: true
+        secondary_info: last-changed
       - entity: binary_sensor.measurements_reliable
         secondary_info: last-changed
       - type: attribute

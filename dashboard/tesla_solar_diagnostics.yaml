@@ -81,6 +81,8 @@ sections:
       - type: history-graph
         hours_to_show: 24
         entities:
+          - entity: binary_sensor.tesla_api_unreachable
+            name: Tesla API unreachable
           - entity: binary_sensor.model_y_charge_cable
             name: Cable
           - entity: binary_sensor.solar_window
