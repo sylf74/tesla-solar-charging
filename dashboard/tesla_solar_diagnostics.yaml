@@ -83,6 +83,8 @@ sections:
         entities:
           - entity: binary_sensor.tesla_api_unreachable
             name: Tesla API unreachable
+          - entity: binary_sensor.charging_at_home
+            name: Charging at home
           - entity: binary_sensor.model_y_charge_cable
             name: Cable
           - entity: binary_sensor.solar_window

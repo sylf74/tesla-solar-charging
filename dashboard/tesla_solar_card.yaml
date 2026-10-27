@@ -31,6 +31,8 @@ cards:
       # both stop every automation at its first condition, silently.
       - entity: binary_sensor.model_y_charge_cable
         name: Cable connected
+      - entity: binary_sensor.charging_at_home
+        name: Charging at home
       - entity: sensor.model_y_battery_level
         name: State of charge
       - entity: switch.model_y_charge

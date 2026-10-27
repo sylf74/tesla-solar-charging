@@ -72,6 +72,13 @@
 
 # ---------------------------------------------------------------------
 # 1. User-facing settings
+#
+# No `initial:` on any helper, deliberately. In Home Assistant an
+# `initial:` value is RE-APPLIED on every restart, overwriting whatever
+# the user had set. Omitting it makes the last saved value persist,
+# which is what anyone adjusting a slider expects. The cost is that a
+# fresh install starts every helper at its minimum, so set them once
+# after first install.
 # ---------------------------------------------------------------------
 input_boolean:
   tesla_solar_charging:
@@ -89,13 +96,11 @@ input_datetime:
     name: Off-peak start
     has_date: false
     has_time: true
-    initial: "22:00:00"
 
   tesla_off_peak_end:
     name: Off-peak end
     has_date: false
     has_time: true
-    initial: "06:00:00"
 
 input_number:
   tesla_base_margin:
@@ -103,7 +108,6 @@ input_number:
     min: 0
     max: 1000
     step: 50
-    initial: 400
     unit_of_measurement: W
     icon: mdi:shield-sun
 
@@ -112,7 +116,6 @@ input_number:
     min: 50
     max: 100
     step: 5
-    initial: 90
     unit_of_measurement: "%"
     icon: mdi:battery-charging-80
 
@@ -124,7 +127,6 @@ input_number:
     min: 0
     max: 1500
     step: 50
-    initial: 0
     unit_of_measurement: W
     icon: mdi:transmission-tower-import
 
@@ -133,7 +135,6 @@ input_number:
     min: 20
     max: 500
     step: 1
-    initial: 179
     icon: mdi:api
 
   tesla_night_soc_target:
@@ -141,7 +142,6 @@ input_number:
     min: 50
     max: 100
     step: 5
-    initial: 80
     unit_of_measurement: "%"
     icon: mdi:weather-night
 
@@ -150,7 +150,6 @@ input_number:
     min: 6
     max: 32
     step: 1
-    initial: 32
     unit_of_measurement: A
     icon: mdi:flash
 
@@ -160,7 +159,6 @@ counter:
   # stricter than the assumed limit.
   tesla_fleet_commands:
     name: Fleet API commands today
-    initial: 0
     step: 1
     icon: mdi:counter
 
@@ -275,6 +273,24 @@ template:
           {{ not (has_value('sensor.model_y_battery_level')
                   and has_value('number.model_y_charge_current')
                   and has_value('switch.model_y_charge')) }}
+
+      # -- Charging at home ---------------------------------------------
+      # Nothing else in this package can tell a charge at home from a
+      # charge anywhere else. The cable sensor reads "connected" at a
+      # public charger too, so without this guard a stop automation will
+      # happily cut a Supercharger session because the house has no
+      # surplus, or because the SOC passed a target meant for the home
+      # wallbox.
+      #
+      # The wallbox clamp is the discriminator: if it is not delivering
+      # power, the car is not charging here. Threshold well under the
+      # 5 A floor (~1150 W); delay_off rides out the seconds around a
+      # command when power briefly drops.
+      - name: "Charging at home"
+        unique_id: charging_at_home
+        delay_off: "00:03:00"
+        state: >
+          {{ states('sensor.borne_ve_2_1min') | float(0) > 300 }}
 
       # -- Off-peak window ---------------------------------------------
       # Handles windows that cross midnight (e.g. 22:00 -> 06:00).
@@ -656,6 +672,10 @@ automation:
         entity_id: binary_sensor.off_peak_window
         state: "off"
       - condition: state
+        alias: "Only ever cut a charge that is happening at home"
+        entity_id: binary_sensor.charging_at_home
+        state: "on"
+      - condition: state
         entity_id: switch.model_y_charge
         state: "on"
       - condition: numeric_state
@@ -749,6 +769,10 @@ automation:
         entity_id: binary_sensor.off_peak_window
         state: "off"
       - condition: state
+        alias: "Only ever cut a charge that is happening at home"
+        entity_id: binary_sensor.charging_at_home
+        state: "on"
+      - condition: state
         entity_id: switch.model_y_charge
         state: "on"
       - condition: template
@@ -822,6 +846,10 @@ automation:
       - platform: time_pattern
         minutes: "/10"
     condition:
+      - condition: state
+        alias: "Only ever cut a charge that is happening at home"
+        entity_id: binary_sensor.charging_at_home
+        state: "on"
       - condition: state
         entity_id: switch.model_y_charge
         state: "on"
@@ -901,6 +929,10 @@ automation:
         entity_id: input_boolean.tesla_night_charging
         state: "on"
       - condition: state
+        alias: "Only ever cut a charge that is happening at home"
+        entity_id: binary_sensor.charging_at_home
+        state: "on"
+      - condition: state
         entity_id: switch.model_y_charge
         state: "on"
     action:
@@ -921,8 +953,18 @@ automation:
           {{ states('sensor.model_y_battery_level') | float(0)
              >= states('input_number.tesla_night_soc_target') | float(80) }}
     condition:
+      # This automation had no master-switch guard at all, which meant it
+      # cut any charge in progress during the off-peak window - including
+      # a Supercharger session - whatever the user had switched off.
+      - condition: state
+        entity_id: input_boolean.tesla_night_charging
+        state: "on"
       - condition: state
         entity_id: binary_sensor.off_peak_window
+        state: "on"
+      - condition: state
+        alias: "Only ever cut a charge that is happening at home"
+        entity_id: binary_sensor.charging_at_home
         state: "on"
       - condition: state
         entity_id: switch.model_y_charge

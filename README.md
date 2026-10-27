@@ -116,6 +116,26 @@ max, does not work. Under broken cloud the target dips to zero every few
 minutes, so the condition is almost never satisfied even while the target spends
 its time between 9 and 17 A. The charge stops and never restarts.
 
+### Only ever cut a charge that is happening at home
+
+The cable sensor reads "connected" at a public charger exactly as it does on
+the home wallbox, and the state of charge is the same number wherever the car
+is plugged in. Nothing in a vehicle-API-driven package distinguishes the two on
+its own.
+
+Left unguarded, that produces a genuinely bad failure: a stop automation cuts a
+Supercharger session because the house has no surplus, or because the SOC
+crossed a target meant for overnight charging at home.
+
+The wallbox clamp is the discriminator. `Charging at home` is true only while
+that circuit is actually delivering power, and every automation that turns
+charging **off** requires it. Automations that turn charging **on** do not — a
+redundant start command while already charging elsewhere is harmless.
+
+This is also why each stop automation carries its own master-switch condition.
+One of them originally did not, and switching the feature off in the UI did not
+stop it from acting.
+
 ### Guard rails
 
 **Measurement sanity.** Control freezes entirely if any meter goes unavailable,
@@ -221,6 +241,12 @@ everything. Night charging survives both, since it reads no measurement at
 all — which is the point of keeping it separate.
 
 ## Installation
+
+**Helper values are not pre-seeded.** Home Assistant re-applies an `initial:`
+value on every restart, overwriting whatever the user set, so this package
+declares none. The last saved value persists, as anyone adjusting a slider
+expects — but a fresh install starts every helper at its minimum. Set them once
+after first install.
 
 Copy `packages/tesla_solar.yaml` into `config/packages/`, then enable packages
 in `configuration.yaml`:
